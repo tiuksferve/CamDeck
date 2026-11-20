@@ -1,0 +1,12 @@
+[Unit]
+Description=CamDeck — câmara XIAO ESP32-S3 Sense do uConsole no browser (porta 8090)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/PycharmProjects/CamDeck/host/camd.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

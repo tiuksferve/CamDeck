@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#161b22">
+<title>CamDeck</title>
+<link rel="icon" type="image/svg+xml" href="/img/logo.svg">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<!-- Autenticação: nada da câmara é servido antes do login. -->
+<div id="login" class="overlay" hidden>
+  <form id="login-form" class="card">
+    <h1 class="brand-title"><img src="/img/logo.svg" alt="" class="brand-logo"> CamDeck</h1>
+    <p class="muted">Câmara USB do uConsole. Introduza a palavra-passe do servidor.</p>
+    <input type="password" id="password" placeholder="Palavra-passe" autocomplete="current-password" required>
+    <button type="submit">Entrar</button>
+    <p id="login-error" class="error" hidden></p>
+    <p id="login-first" class="muted" hidden>Primeira vez: a palavra-passe inicial está em
+      <span class="mono">~/.config/camdeck/initial-password.txt</span>.</p>
+  </form>
+</div>
+
+<!-- Visor da galeria -->
+<div id="viewer" class="overlay viewer" hidden>
+  <div class="viewer-top">
+    <span id="viewer-title" class="mono"></span>
+    <span id="viewer-info" class="muted"></span>
+    <span class="spacer"></span>
+    <a id="viewer-dl" class="btn" download>Transferir</a>
+    <button id="viewer-del" class="danger">Apagar</button>
+    <button id="viewer-close" class="ghost" aria-label="Fechar">✕</button>
+  </div>
+  <div class="viewer-body">
+    <button id="viewer-prev" class="viewer-nav" aria-label="Anterior">‹</button>
+    <div id="viewer-media"></div>
+    <button id="viewer-next" class="viewer-nav" aria-label="Seguinte">›</button>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<div id="app" hidden>
+  <header>
+    <span class="brand"><img src="/img/logo.svg" alt="" class="brand-logo"> CamDeck</span>
+    <span id="pill-link" class="pill off">Câmara desligada</span>
+    <span id="pill-rec" class="pill rec" hidden>● REC <span id="pill-rec-time">00:00</span></span>
+    <span class="spacer"></span>
+    <span id="hdr-stats" class="muted mono"></span>
+    <div class="menu-wrap">
+      <button id="menu-btn" class="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Menu">☰</button>
+      <div id="menu" class="menu" hidden>
+        <div class="menu-label">CamDeck <span id="menu-version"></span></div>
+        <button class="menu-item" data-goto="device">Dispositivo</button>
+        <hr>
+        <button class="menu-item danger" id="logout">Sair</button>
+      </div>
+    </div>
+  </header>
+
+  <nav id="tabs">
+    <button class="tab active" data-tab="live">Ao vivo</button>
+    <button class="tab" data-tab="gallery">Galeria <span id="badge-proc" class="badge" hidden>…</span></button>
+    <button class="tab" data-tab="settings">Ajustes</button>
+    <button class="tab" data-tab="device">Dispositivo</button>
+  </nav>
+
+  <main>
+    <!-- ── Ao vivo ─────────────────────────────────────────────────────── -->
+    <section id="tab-live" class="panel-tab active">
+      <div class="live-layout">
+        <div id="live-wrap" class="live-wrap">
+          <img id="live" alt="">
+          <div id="live-empty" class="live-empty">
+            <img src="/img/logo.svg" alt="" class="live-empty-logo">
+            <span id="live-empty-text">A ligar à câmara…</span>
+          </div>
+          <div class="live-overlay tl">
+            <span id="ov-rec" class="ov-rec" hidden>● REC <span id="ov-rec-time">00:00</span></span>
+          </div>
+          <div class="live-overlay tr mono" id="ov-info"></div>
+          <div id="flash" class="flash"></div>
+          <button id="fs-exit" class="fs-exit ghost" hidden aria-label="Sair do ecrã inteiro">✕</button>
+        </div>
+
+        <aside class="live-side">
+          <button id="btn-snap" class="big-btn snap" title="Foto (espaço)">
+            <span class="big-ico">◎</span><span>Foto</span>
+          </button>
+          <button id="btn-rec" class="big-btn rec" title="Gravar (R)">
+            <span class="big-ico">●</span><span id="btn-rec-label">Gravar</span>
+          </button>
+
+          <div class="side-block">
+            <label>Resolução do vídeo
+              <select id="quick-size"></select>
+            </label>
+            <label>Fotos
+              <select id="quick-snap"></select>
+            </label>
+            <label class="switch-row"><span>Som na gravação</span>
+              <input type="checkbox" id="quick-mic" class="switch"></label>
+          </div>
+
+          <div class="side-row">
+            <button id="btn-fs" class="grow" title="Ecrã inteiro (F)"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg> Ecrã inteiro</button>
+          </div>
+
+          <div id="last-shot" class="last-shot" hidden>
+            <span class="muted">Última</span>
+            <img id="last-shot-img" alt="">
+            <span id="last-shot-name" class="muted mono"></span>
+          </div>
+          <p class="muted keys">Espaço: foto · R: gravar · F: ecrã inteiro</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ── Galeria ─────────────────────────────────────────────────────── -->
+    <section id="tab-gallery" class="panel-tab">
+      <div class="gallery-head">
+        <div class="seg seg3" id="gal-filter">
+          <button data-kind="" class="active">Tudo</button>
+          <button data-kind="photos">Fotos</button>
+          <button data-kind="videos">Vídeos</button>
+        </div>
+        <span class="spacer"></span>
+        <span id="gal-count" class="muted"></span>
+        <span id="gal-disk" class="muted"></span>
+      </div>
+      <div id="gallery" class="gallery"></div>
+      <p id="gal-empty" class="muted center gal-empty" hidden>Ainda não há fotos nem vídeos.</p>
+    </section>
+
+    <!-- ── Ajustes ─────────────────────────────────────────────────────── -->
+    <section id="tab-settings" class="panel-tab">
+      <div id="settings-off" class="banner warn" hidden>A câmara está desligada; os ajustes ficam indisponíveis.</div>
+      <div class="settings-grid">
+        <div class="panel">
+          <h2>Imagem</h2>
+          <div id="grp-image" class="ctl-list"></div>
+        </div>
+        <div class="panel">
+          <h2>Exposição</h2>
+          <div id="grp-exposure" class="ctl-list"></div>
+        </div>
+        <div class="panel">
+          <h2>Cor</h2>
+          <div id="grp-color" class="ctl-list"></div>
+        </div>
+        <div class="panel">
+          <h2>Vídeo e fotos</h2>
+          <div id="grp-stream" class="ctl-list"></div>
+        </div>
+        <div class="panel">
+          <h2>Correções do sensor <span class="muted">avançado</span></h2>
+          <div id="grp-advanced" class="ctl-list"></div>
+        </div>
+        <div class="panel">
+          <h2>Pré-visualização</h2>
+          <img id="settings-preview" class="settings-preview" alt="">
+          <div class="row" style="margin-top:10px">
+            <button id="btn-reset" class="danger">Repor valores do sensor</button>
+          </div>
+          <p class="muted" style="margin-top:8px">Os ajustes ficam guardados no uConsole e voltam a ser
+            aplicados sempre que a câmara arranca.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Dispositivo ─────────────────────────────────────────────────── -->
+    <section id="tab-device" class="panel-tab">
+      <div class="settings-grid">
+        <div class="panel">
+          <h2>Câmara <span id="dev-state" class="pill off">—</span></h2>
+          <dl id="dev-info" class="kv"></dl>
+        </div>
+        <div class="panel">
+          <h2>Ligação USB</h2>
+          <dl id="dev-link" class="kv"></dl>
+        </div>
+        <div class="panel">
+          <h2>Microfone</h2>
+          <div class="meter"><div id="mic-meter" class="meter-bar"></div></div>
+          <p class="muted" style="margin:6px 0 12px">Nível do som captado agora.</p>
+          <div id="grp-mic" class="ctl-list"></div>
+        </div>
+        <div class="panel">
+          <h2>Armazenamento</h2>
+          <dl id="dev-disk" class="kv"></dl>
+        </div>
+        <div class="panel">
+          <h2>Palavra-passe</h2>
+          <form id="pw-form" class="ctl-list">
+            <input type="password" id="pw-cur" placeholder="Atual" autocomplete="current-password" required>
+            <input type="password" id="pw-new" placeholder="Nova (mín. 8)" autocomplete="new-password" minlength="8" required>
+            <button type="submit">Mudar palavra-passe</button>
+          </form>
+        </div>
+        <div class="panel">
+          <h2>Manutenção</h2>
+          <div class="row">
+            <button id="btn-reboot">Reiniciar a câmara</button>
+          </div>
+          <p class="muted" style="margin-top:8px">Firmware: <span class="mono">firmware/flash.sh</span>
+            no repositório (pára o serviço enquanto grava).</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=CamDeck
+Comment=Câmara USB (XIAO ESP32-S3 Sense): vídeo ao vivo, fotos e gravação
+Exec=xdg-open http://localhost:8090/
+Icon=camera-web
+Terminal=false
+Categories=AudioVideo;Video;

@@ -1,0 +1,25 @@
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# PSRAM octal de 8 MB do XIAO ESP32-S3 Sense: buffers da câmera
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# A USB nativa (USB-Serial-JTAG) é o canal binário com o uConsole: nada de consola nela.
+# A consola fica na UART0 (GPIO43/44, sem nada ligado). O host ressincroniza no cabeçalho
+# dos pacotes e ignora o que o ROM escreve no arranque.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+
+# Sem rádio: o Wi-Fi e o Bluetooth nunca são iniciados (nem ligados ao binário).
+CONFIG_BT_ENABLED=n
+
+# Tarefa do driver da câmera no core 1 (com o stream); comandos, estado e microfone no core 0
+CONFIG_CAMERA_CORE1=y
