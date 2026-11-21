@@ -19,6 +19,26 @@ log = logging.getLogger("camdeck.config")
 CONFIG_DIR = os.path.expanduser("~/.config/camdeck")
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.json")
 INITIAL_PASSWORD_PATH = os.path.join(CONFIG_DIR, "initial-password.txt")
+# Token para programas do próprio uConsole (ex.: dashd do DashDeck), sem palavra-passe. Só é aceite
+# em ligações locais (127.0.0.1/::1) e o ficheiro só é legível pelo utilizador.
+LOCAL_TOKEN_PATH = os.path.join(CONFIG_DIR, "local-token")
+
+
+def local_token() -> str:
+    """Lê (ou cria) o token local."""
+    try:
+        with open(LOCAL_TOKEN_PATH) as f:
+            tok = f.read().strip()
+        if len(tok) >= 32:
+            return tok
+    except OSError:
+        pass
+    tok = secrets.token_urlsafe(32)
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    fd = os.open(LOCAL_TOKEN_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(tok + "\n")
+    return tok
 
 DEFAULTS = {
     "bind_host": "0.0.0.0",

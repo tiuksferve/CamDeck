@@ -13,6 +13,7 @@ Uso:
 
 import argparse
 import getpass
+import hmac
 import json
 import logging
 import os
@@ -29,7 +30,7 @@ from flask import Flask, Response, abort, jsonify, request, send_file, send_from
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from camera import CameraError, CameraService   # noqa: E402
-from config import INITIAL_PASSWORD_PATH, Config  # noqa: E402
+from config import INITIAL_PASSWORD_PATH, Config, local_token  # noqa: E402
 from media import Media                          # noqa: E402
 from recorder import Recorder                    # noqa: E402
 
@@ -91,9 +92,14 @@ def create_app(cfg: Config, cam: CameraService, rec: Recorder, media: Media, hub
     app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict",
                       PERMANENT_SESSION_LIFETIME=timedelta(days=30), MAX_CONTENT_LENGTH=64 * 1024)
     throttle = LoginThrottle()
+    token = local_token()
 
     def authed():
-        return session.get("camdeck_auth") is True
+        if session.get("camdeck_auth") is True:
+            return True
+        # programas locais (dashd): cabeçalho X-CamDeck-Token, só a partir do próprio uConsole
+        t = request.headers.get("X-CamDeck-Token", "")
+        return bool(t) and request.remote_addr in ("127.0.0.1", "::1") and hmac.compare_digest(t, token)
 
     def login_required(fn):
         @wraps(fn)
@@ -222,15 +228,19 @@ def create_app(cfg: Config, cam: CameraService, rec: Recorder, media: Media, hub
     @app.get("/api/frame.jpg")
     @login_required
     def frame():
-        """Último quadro do stream (pré-visualizações, DashDeck)."""
+        """Último quadro do stream (pré-visualizações, DashDeck). Com ?after=n espera por um quadro
+        mais novo do que n; o número do quadro vem no cabeçalho X-Frame."""
+        after = request.args.get("after", type=int)
         cam.add_viewer()
         try:
-            _, f = cam.wait_frame(0 if cam.latest_frame() is None else -1, timeout=5)
+            if after is None:
+                after = 0 if cam.latest_frame() is None else -1
+            n, f = cam.wait_frame(after, timeout=5)
         finally:
             cam.remove_viewer()
         if not f:
             abort(503)
-        return Response(f, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
+        return Response(f, mimetype="image/jpeg", headers={"Cache-Control": "no-store", "X-Frame": str(n)})
 
     # ── comandos ───────────────────────────────────────────────────────────
     @app.post("/api/set")

@@ -44,15 +44,18 @@ firmware/flash.sh           # compila e grava o firmware (pára o camd enquanto 
 
 - A palavra-passe inicial fica em `~/.config/camdeck/initial-password.txt` (apagado quando a muda).
   Também se muda com `host/camd.py --set-password`.
+- Programas do próprio uConsole (o DashDeck, por exemplo) entram com o token de
+  `~/.config/camdeck/local-token`, sem palavra-passe (ver `docs/arquitetura.md`).
 - Configuração: `~/.config/camdeck/config.json` (porta, pastas, ajustes guardados).
 - Fotos em `~/Pictures/CamDeck`, vídeos (MP4 H.264 + AAC) em `~/Videos/CamDeck`.
 - Logs: `journalctl --user -u camd -f`; reiniciar: `systemctl --user restart camd`.
 
 ### Dois ESP32 no mesmo uConsole
 
-Todos os ESP32 em USB-Serial-JTAG têm o mesmo `303a:1001`, e a regra do DashDeck dá `/dev/esp-dash`
-a qualquer um. `setup/make-udev-rule.sh` cria `/dev/esp-cam` pelo número de série da câmara e tira-lhe
-o `esp-dash`, para o `dashd` nunca abrir a câmara por engano.
+Todos os ESP32 em USB-Serial-JTAG têm o mesmo `303a:1001`, por isso cada placa é identificada pelo
+número de série USB. `setup/make-udev-rule.sh` cria `/dev/esp-cam` pelo número de série da câmara. A
+regra do DashDeck (`99-esp-dash.rules`) deve filtrar também pelo número de série da placa dele, para o
+`dashd` nunca abrir a câmara por engano (o script avisa se não filtrar).
 
 ## Estrutura
 

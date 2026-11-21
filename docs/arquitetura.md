@@ -69,3 +69,12 @@ temperatura, memória, falhas de envio, pico do microfone).
   (`apad`) até ao fim do vídeo.
 - **MP4 por software:** o CM5 não tem codificador H.264 por hardware; o libx264 `veryfast` converte
   8 s de HD em ~3 s.
+
+## Programas locais (DashDeck)
+
+- **Token local:** o camd cria `~/.config/camdeck/local-token` (permissões 600) ao arrancar. Um pedido
+  com o cabeçalho `X-CamDeck-Token` igual ao ficheiro entra sem palavra-passe, mas só a partir do
+  próprio uConsole (`127.0.0.1` ou `::1`). É assim que o `dashd` do DashDeck usa a câmara (box Câmara).
+- **`GET /api/frame.jpg?after=n`:** espera (até 5 s) por um quadro mais novo do que `n` e devolve o
+  número dele no cabeçalho `X-Frame`. Sem `after`, devolve logo o último quadro. Um visor que pede
+  sempre com o `X-Frame` anterior recebe cada quadro uma vez, à cadência da câmara.

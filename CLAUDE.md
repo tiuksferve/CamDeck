@@ -21,11 +21,13 @@ Protocolo e decisões técnicas: `docs/arquitetura.md`.
   porque a regra udev (`setup/make-udev-rule.sh`, precisa de sudo) ainda não foi instalada.
 
 ## Cuidados conhecidos
-- **Conflito com o DashDeck:** a regra `99-esp-dash.rules` dá `/dev/esp-dash` a qualquer ESP 303a:1001.
-  Com a câmara ligada, o link pode apontar para ela. `setup/make-udev-rule.sh` resolve (tira o esp-dash à câmara).
+- **Dois ESP32 (303a:1001):** a regra `99-esp-dash.rules` instalada já filtra pelo número de série da placa
+  do DashDeck, por isso `/dev/esp-dash` nunca aponta para a câmara. `setup/make-udev-rule.sh` só acrescenta
+  `/dev/esp-cam` (o `SYMLINK-=` não existe neste udev: a linha era recusada inteira).
 - A USB Full Speed limita o débito a ~890 KB/s: HD ~10 fps, QXGA ~3 fps.
 - PSRAM DMA do esp32-camera tem de ficar desligado com o OV3660 (NO-SOI acima de SVGA).
 
 ## Ideias seguintes
-Timelapse, deteção de movimento, leitor de QR, box "Câmara" no DashDeck (pré-visualização no ecrã 320×172,
-via `/api/frame.jpg`), escuta do som ao vivo no browser.
+Timelapse, deteção de movimento, leitor de QR, escuta do som ao vivo no browser.
+- Box "Câmara" do DashDeck feita (21/11): usa o token local (`~/.config/camdeck/local-token`, só de 127.0.0.1)
+  e `/api/frame.jpg?after=n` (cabeçalho `X-Frame`). Não mudar estes dois sem atualizar `DashDeck/host/camclient.py`.
