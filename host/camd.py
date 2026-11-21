@@ -12,6 +12,7 @@ Uso:
 """
 
 import argparse
+import base64
 import getpass
 import hmac
 import json
@@ -29,12 +30,15 @@ from flask import Flask, Response, abort, jsonify, request, send_file, send_from
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from analyzer import AnalyzerService             # noqa: E402
 from camera import CameraError, CameraService   # noqa: E402
 from config import INITIAL_PASSWORD_PATH, Config, local_token  # noqa: E402
+from faces import FaceDB                         # noqa: E402
 from media import Media                          # noqa: E402
+from power import PowerMonitor                   # noqa: E402
 from recorder import Recorder                    # noqa: E402
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 log = logging.getLogger("camdeck")
 
@@ -86,7 +90,8 @@ class LoginThrottle:
         self._fails.pop(ip, None)
 
 
-def create_app(cfg: Config, cam: CameraService, rec: Recorder, media: Media, hub: EventHub):
+def create_app(cfg: Config, cam: CameraService, rec: Recorder, media: Media, hub: EventHub,
+               ai: AnalyzerService, faces: FaceDB, power: PowerMonitor):
     app = Flask(__name__, static_folder=None)
     app.secret_key = cfg.get("secret_key")
     app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict",
@@ -182,7 +187,7 @@ def create_app(cfg: Config, cam: CameraService, rec: Recorder, media: Media, hub
     @login_required
     def api_state():
         return jsonify(camera=cam.public_state(), stat=cam.public_stat(), rec=rec.state(),
-                       disk=media.disk(), version=VERSION)
+                       disk=media.disk(), ai=ai.public_state(), power=power.state, version=VERSION)
 
     @app.get("/api/events")
     @login_required
@@ -194,6 +199,8 @@ def create_app(cfg: Config, cam: CameraService, rec: Recorder, media: Media, hub
                 yield "retry: 3000\n\n"
                 yield f"event: state\ndata: {json.dumps(cam.public_state())}\n\n"
                 yield f"event: rec\ndata: {json.dumps(rec.state())}\n\n"
+                yield f"event: ai_state\ndata: {json.dumps(ai.public_state())}\n\n"
+                yield f"event: power\ndata: {json.dumps(power.state)}\n\n"
                 while True:
                     try:
                         yield q.get(timeout=15)
@@ -373,6 +380,118 @@ def create_app(cfg: Config, cam: CameraService, rec: Recorder, media: Media, hub
         hub.emit("media", {"kind": kind, "deleted": name})
         return jsonify(ok=True)
 
+    # ── análise (IA) ───────────────────────────────────────────────────────
+    @app.get("/api/ai")
+    @login_required
+    def api_ai():
+        return jsonify(state=ai.public_state(), people=faces.list())
+
+    @app.post("/api/ai")
+    @login_required
+    def api_ai_set():
+        try:
+            ai.update(body())
+        except (TypeError, ValueError) as e:
+            return jsonify(error=str(e)), 400
+        return jsonify(ok=True, state=ai.public_state())
+
+    @app.get("/api/ai/events")
+    @login_required
+    def api_ai_events():
+        return jsonify(items=ai.events.list())
+
+    @app.delete("/api/ai/events")
+    @login_required
+    def api_ai_events_clear():
+        ai.events.clear()
+        return jsonify(ok=True)
+
+    @app.get("/ai/event/<name>")
+    @login_required
+    def ai_event_thumb(name):
+        try:
+            p = ai.events.thumb_path(name)
+        except ValueError:
+            abort(400)
+        if not os.path.exists(p):
+            abort(404)
+        return send_file(p, mimetype="image/jpeg", max_age=86400)
+
+    @app.post("/api/ai/enroll")
+    @login_required
+    def api_ai_enroll():
+        """Regista a cara maior do quadro atual com o nome dado (ou junta-a à pessoa pid)."""
+        b = body()
+        name, pid = (b.get("name") or "").strip(), b.get("pid")
+        if not name and not pid:
+            return jsonify(error="falta o nome"), 400
+        if ai.missing():
+            return jsonify(error="faltam modelos: corra setup/install-ai.sh"), 409
+        cam.add_viewer()
+        try:
+            n, f = cam.wait_frame(cam.frame_n, timeout=5)   # um quadro novo, não o último guardado
+        finally:
+            cam.remove_viewer()
+        if not f:
+            return jsonify(error="sem imagem da câmara"), 503
+        try:
+            found = ai.request_embed(f)
+        except (TimeoutError, RuntimeError, ConnectionError) as e:
+            return jsonify(error=f"análise falhou: {e}"), 504
+        if not found:
+            return jsonify(error="não encontrei nenhuma cara na imagem"), 422
+        face = max(found, key=lambda x: x["px"])
+        if face["px"] < 60:
+            return jsonify(error="a cara está muito pequena; aproxime-se da câmara"), 422
+        try:
+            r = faces.add_sample(name, face["emb"], base64.b64decode(face["crop"]), pid=pid)
+        except ValueError as e:
+            return jsonify(error=str(e)), 400
+        log.info("cara registada: %s (%d amostras)", r["name"], r["samples"])
+        hub.emit("ai_state", ai.public_state())
+        return jsonify(ok=True, person=r, faces=len(found), people=faces.list())
+
+    @app.patch("/api/ai/people/<int:pid>")
+    @login_required
+    def api_ai_rename(pid):
+        try:
+            faces.rename(pid, body().get("name"))
+        except ValueError as e:
+            return jsonify(error=str(e)), 400
+        except KeyError:
+            abort(404)
+        return jsonify(ok=True, people=faces.list())
+
+    @app.delete("/api/ai/people/<int:pid>")
+    @login_required
+    def api_ai_forget(pid):
+        try:
+            faces.delete(pid)
+        except KeyError:
+            abort(404)
+        hub.emit("ai_state", ai.public_state())
+        return jsonify(ok=True, people=faces.list())
+
+    @app.delete("/api/ai/people/<int:pid>/<sample>")
+    @login_required
+    def api_ai_forget_sample(pid, sample):
+        try:
+            faces.delete_sample(pid, sample)
+        except (KeyError, ValueError):
+            abort(404)
+        return jsonify(ok=True, people=faces.list())
+
+    @app.get("/ai/face/<name>")
+    @login_required
+    def ai_face(name):
+        try:
+            p = faces.sample_path(name)
+        except ValueError:
+            abort(400)
+        if not os.path.exists(p):
+            abort(404)
+        return send_file(p, mimetype="image/jpeg", max_age=86400)
+
     return app
 
 
@@ -409,7 +528,22 @@ def main():
     cam = CameraService(cfg, hub.emit)
     rec = Recorder(cfg, cam, media, hub.emit)
     rec.recover()
+    faces = FaceDB()
+    power = PowerMonitor(hub.emit)
+    ai = AnalyzerService(cfg, cam, faces, hub.emit, power)
+
+    def on_power(st, prev):
+        # Bateria quase vazia: termina a gravação já, para o MP4 ficar completo antes de o uConsole se desligar
+        if st["level"] == "critical" and prev.get("level") != "critical" and rec.active:
+            log.warning("bateria quase vazia: a terminar a gravação")
+            try:
+                rec.stop()
+            except RuntimeError:
+                pass
+    power.add_listener(on_power)
+    power.start()
     cam.start()
+    ai.start()
 
     # Estado da gravação (tempo decorrido) a cada segundo, enquanto grava
     def rec_ticker():
@@ -419,13 +553,14 @@ def main():
                 hub.emit("rec", rec.state())
     threading.Thread(target=rec_ticker, daemon=True).start()
 
-    app = create_app(cfg, cam, rec, media, hub)
+    app = create_app(cfg, cam, rec, media, hub, ai, faces, power)
 
     def shutdown(*_):
         log.info("a terminar")
         if rec.active:
             rec.stop()
             time.sleep(0.5)
+        ai.stop()
         cam.stop()
         os._exit(0)
 

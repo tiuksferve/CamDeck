@@ -85,10 +85,17 @@ class CameraService:
         """Hello e reposição dos ajustes guardados; corre a cada ligação e a cada arranque do ESP."""
         self._cfg_started = time.time()
         time.sleep(0.3)
-        try:
-            hello = self.link.request("hello", timeout=5)
-        except (TimeoutError, ConnectionError) as e:
-            log.warning("sem hello do ESP: %s", e)
+        hello = None
+        for attempt in range(4):        # o ESP pode estar a meio do arranque (ligado a quente)
+            try:
+                hello = self.link.request("hello", timeout=3)
+                break
+            except TimeoutError as e:
+                log.warning("sem hello do ESP (tentativa %d): %s", attempt + 1, e)
+            except ConnectionError as e:
+                log.warning("sem hello do ESP: %s", e)
+                return
+        if hello is None:
             return
         log.info("ESP: firmware %s, sensor %s (máx. %s)", hello.get("fw"), hello.get("sensor"),
                  hello.get("max"))
@@ -204,6 +211,10 @@ class CameraService:
 
     def latest_frame(self):
         return self._frame
+
+    @property
+    def frame_n(self) -> int:
+        return self._frame_n
 
     def add_listener(self, frame_fn=None, audio_fn=None):
         if frame_fn:

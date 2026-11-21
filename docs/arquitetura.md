@@ -78,3 +78,53 @@ temperatura, memória, falhas de envio, pico do microfone).
 - **`GET /api/frame.jpg?after=n`:** espera (até 5 s) por um quadro mais novo do que `n` e devolve o
   número dele no cabeçalho `X-Frame`. Sem `after`, devolve logo o último quadro. Um visor que pede
   sempre com o `X-Frame` anterior recebe cada quadro uma vez, à cadência da câmara.
+
+## Análise de imagem (IA)
+
+```
+camd (Python do sistema)                         worker (venv de IA: onnxruntime + OpenCV)
+ CameraService ── último JPEG ──► AnalyzerService ══ stdin ═══► Analyzer
+                                   ├─ SSE "ai"     ◄═ stdout ══  YOLO11n · YuNet · FER+ · genderage · SFace · QR
+                                   ├─ EventLog (~/.local/share/camdeck/events)
+                                   └─ FaceDB  (~/.local/share/camdeck/faces) ── galeria ──► worker
+```
+
+- **Processo à parte:** o Flask não perde fluidez, o GIL não é partilhado e o worker pode ser morto
+  quando todas as funções se desligam (liberta ~300 MB). Os modelos só são carregados quando a função
+  é ligada.
+- **Protocolo:** uma linha JSON por comando; se tiver `"len"`, seguem-se esses bytes (um JPEG). As
+  respostas são linhas JSON (`ready`, `result`, `reply`, `error`). O worker duplica o stdout para o
+  protocolo e manda o fd 1 para o stderr, para nenhuma biblioteca estragar as respostas.
+
+  | comando | resposta |
+  |---|---|
+  | `{"cmd":"cfg","features":{...},"conf":0.45,"model":"yolo11n","size":320}` | nenhuma |
+  | `{"cmd":"gallery","people":[{"id","name","embs":[base64 float32]}]}` | nenhuma |
+  | `{"cmd":"frame","n":123,"len":L}` + JPEG | `{"ev":"result","n":123,"objects":[...],"faces":[...],"poses":[...],"codes":[...],"ms":{...}}` |
+  | `{"cmd":"embed","id":7,"len":L}` + JPEG | `{"ev":"reply","id":7,"faces":[{"b","px","emb","crop"}]}` |
+
+  Coordenadas relativas (0..1) à imagem recebida; a interface desenha-as num `<canvas>` por cima do
+  `<img>`, tendo em conta o `object-fit: contain`.
+- **Um quadro de cada vez:** o feeder manda o quadro mais recente, espera pelo resultado e só então
+  pega no seguinte. Se o worker não responder em 15 s ou morrer, é reiniciado (espera crescente até 30 s).
+- **Regulador (`AnalyzerService.budget()`):** depois de cada análise que demorou `t`, espera
+  `t·(1−duty)/duty` e respeita `max_fps`. Na corrente: 2 threads, `duty` 0,5; na bateria: 1 thread, 2/s,
+  `duty` 0,25; CPU ≥ 72 °C: metade. Mudar de corrente para bateria reinicia o worker com outras threads.
+  Em pausa (bateria fraca, falha de energia, CPU ≥ 80 °C) o worker é morto e o vídeo deixa de ser pedido.
+- **Poupança no worker:** nice 10; HD descodificado com `IMREAD_REDUCED_COLOR_2`; movimento medido numa
+  miniatura 64×48 (descodificada a 1/8) contra a do último quadro analisado: sem mudança, devolve o resultado
+  anterior com `"static": true` (no máximo 3 s); pose e caras só com `pessoa ≥ 0,25` no detetor (e 1 quadro
+  em 4); pose em quadros alternados; caras seguidas por sobreposição (IoU ≥ 0,3) com humor a cada 2 análises,
+  idade a cada 10 (média das últimas 5) e nome a cada 15 (a cada 2 enquanto desconhecida).
+- **Energia (`host/power.py`):** lê `/sys/class/power_supply` (AXP228), `thermal_zone0` e
+  `vcgencmd get_throttled` a cada 5 s. Uma leitura com erro (ENXIO) quer dizer que o chip não responde no
+  I2C. Níveis `ok`/`low`/`critical`/`fault`, evento SSE `power`, notificação por D-Bus
+  (`org.freedesktop.Notifications`) e, em `critical`, fim da gravação em curso.
+- **Caras:** YuNet sobre a imagem reduzida a 640 px de largura; as coordenadas voltam à imagem inteira
+  para o alinhamento do SFace, o recorte do FER+ (cinzento 64×64) e o do genderage (96×96). Caras com
+  menos de 36 px não são classificadas. Um nome é dado com semelhança de cosseno ≥ 0,40 com qualquer
+  amostra da pessoa (máx. 12 amostras por pessoa).
+- **API:** `GET/POST /api/ai` (estado e opções), `POST /api/ai/enroll` (`{"name"}` ou `{"pid"}`: regista a
+  maior cara de um quadro novo), `PATCH/DELETE /api/ai/people/<id>`, `DELETE /api/ai/people/<id>/<amostra>`,
+  `GET/DELETE /api/ai/events`, imagens em `/ai/face/<f>` e `/ai/event/<f>`. Eventos SSE: `ai` (cada
+  resultado), `ai_state`, `ai_event`.

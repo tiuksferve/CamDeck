@@ -97,6 +97,8 @@ async function start() {
     const st = await api('/api/state');
     S.disk = st.disk;
     onState(st.camera); onStat(st.stat); onRec(st.rec);
+    if (st.ai) aiOnState(st.ai);
+    if (st.power) onPower(st.power);
   } catch (_) { return; }
   connectEvents();
   setTab(location.hash.slice(1) || 'live');
@@ -109,6 +111,10 @@ function connectEvents() {
   es.addEventListener('state', e => onState(JSON.parse(e.data)));
   es.addEventListener('stat', e => onStat(JSON.parse(e.data)));
   es.addEventListener('rec', e => onRec(JSON.parse(e.data)));
+  es.addEventListener('ai', e => aiOnResult(JSON.parse(e.data)));
+  es.addEventListener('ai_state', e => aiOnState(JSON.parse(e.data)));
+  es.addEventListener('ai_event', e => aiOnEvent(JSON.parse(e.data)));
+  es.addEventListener('power', e => onPower(JSON.parse(e.data)));
   es.addEventListener('media', e => { const m = JSON.parse(e.data); if (S.tab === 'gallery') loadGallery(); if (m.name && m.kind === 'photos') showLastShot(m.name); });
   es.onerror = async () => {
     // O EventSource volta a ligar sozinho; só confirma se a sessão ainda vale
@@ -181,7 +187,8 @@ function setTab(t) {
   history.replaceState(null, '', '#' + t);
   refreshStreams();
   if (t === 'gallery') loadGallery();
-  if (t === 'device') renderDevice();
+  if (t === 'device') { renderDevice(); renderPower(); }
+  if (t === 'ai') aiTabOpened();
 }
 $$('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
 
@@ -190,18 +197,19 @@ function streamTarget() {
   if (document.hidden) return null;
   if (S.tab === 'live') return $('#live');
   if (S.tab === 'settings') return $('#settings-preview');
+  if (S.tab === 'ai') return $('#ai-preview');
   return null;
 }
 
 function stopStreams() {
-  for (const img of [$('#live'), $('#settings-preview')]) {
+  for (const img of [$('#live'), $('#settings-preview'), $('#ai-preview')]) {
     if (img.getAttribute('src')) { img.removeAttribute('src'); img.src = ''; img.removeAttribute('src'); }
   }
 }
 
 function refreshStreams() {
   const target = streamTarget();
-  for (const img of [$('#live'), $('#settings-preview')]) {
+  for (const img of [$('#live'), $('#settings-preview'), $('#ai-preview')]) {
     if (img !== target && img.getAttribute('src')) { img.removeAttribute('src'); }
   }
   if (target && S.camera && S.camera.connected && !target.getAttribute('src')) {
@@ -210,7 +218,7 @@ function refreshStreams() {
   updateLiveEmpty();
 }
 
-for (const img of [$('#live'), $('#settings-preview')]) {
+for (const img of [$('#live'), $('#settings-preview'), $('#ai-preview')]) {
   img.addEventListener('load', () => { img.dataset.ok = '1'; updateLiveEmpty(); });
   img.addEventListener('error', () => {
     if (!img.getAttribute('src')) return;
@@ -549,6 +557,53 @@ $('#viewer-close').addEventListener('click', closeViewer);
 $('#viewer-prev').addEventListener('click', () => openViewer(S.viewerIdx - 1));
 $('#viewer-next').addEventListener('click', () => openViewer(S.viewerIdx + 1));
 $('#viewer-del').addEventListener('click', deleteCurrent);
+
+// ── Energia do uConsole ──────────────────────────────────────────────────
+const POWER_MSG = {
+  low: p => `Bateria fraca (${p.battery_pct} %). Ligue o uConsole à corrente. A análise de imagem está em pausa até lá.`,
+  critical: p => `Bateria quase vazia (${p.battery_pct} %)! Ligue o uConsole à corrente já. A análise parou e as gravações são terminadas.`,
+  fault: p => `Problema de energia: ${p.reason}. Ligue o uConsole à corrente; a análise de imagem está em pausa.`,
+};
+
+function onPower(p) {
+  const prev = S.power;
+  S.power = p;
+  const pill = $('#pill-power');
+  pill.hidden = !p.available;
+  if (p.available) {
+    const pct = p.battery_pct != null ? `${p.battery_pct} %` : '';
+    pill.textContent = p.on_battery ? `🔋 ${pct}` : `⚡ ${pct}`;
+    pill.className = 'pill power ' + (p.level !== 'ok' ? p.level : p.on_battery ? 'ok' : 'mains');
+    pill.title = p.on_battery ? 'Na bateria' : 'Na corrente' + (p.battery_status === 'Charging' ? ' (a carregar)' : '');
+  }
+  const bad = POWER_MSG[p.level];
+  $('#power-banner').hidden = !bad;
+  if (bad) {
+    $('#power-banner').className = 'power-banner ' + p.level;
+    $('#power-banner-text').textContent = bad(p);
+  }
+  if (bad && (!prev || prev.level !== p.level)) toast(bad(p), 'err');
+  if (prev && prev.level !== 'ok' && p.level === 'ok') toast('Energia normal; a análise pode continuar', 'ok');
+  if (S.tab === 'device') renderPower();
+}
+
+function renderPower() {
+  const p = S.power;
+  if (!p) return;
+  const pill = $('#power-state');
+  pill.className = 'pill ' + (p.level === 'ok' ? 'on' : p.level === 'low' ? 'wait' : 'off');
+  pill.textContent = { ok: 'normal', low: 'bateria fraca', critical: 'bateria quase vazia', fault: 'problema' }[p.level];
+  const status = { Charging: 'a carregar', Discharging: 'a descarregar', Full: 'cheia', 'Not charging': 'sem carregar' };
+  kv($('#dev-power'), [
+    ['Alimentação', p.source === 'bateria' ? 'baterias' : 'corrente (carregador)'],
+    ['Bateria', p.battery_pct != null ? `${p.battery_pct} % · ${status[p.battery_status] || p.battery_status || ''}` : null],
+    ['Tensão da bateria', p.battery_v != null ? `${p.battery_v.toFixed(2)} V` : null],
+    ['Corrente da bateria', p.battery_a != null ? `${p.battery_a.toFixed(2)} A` : null],
+    ['Temperatura do CPU', p.temp != null ? `${p.temp.toFixed(1)} °C` + (p.hot ? ' (quente!)' : p.warm ? ' (morno)' : '') : null],
+    ['Chip de energia (AXP)', p.pmic_ok ? 'a responder' : 'sem resposta'],
+    ['Subtensão', p.undervolt ? 'sim' : 'não'],
+  ]);
+}
 
 // ── Dispositivo ──────────────────────────────────────────────────────────
 function kv(dl, rows) {

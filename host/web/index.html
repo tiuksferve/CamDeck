@@ -49,6 +49,7 @@
     <span id="pill-rec" class="pill rec" hidden>● REC <span id="pill-rec-time">00:00</span></span>
     <span class="spacer"></span>
     <span id="hdr-stats" class="muted mono"></span>
+    <span id="pill-power" class="pill power" hidden></span>
     <div class="menu-wrap">
       <button id="menu-btn" class="menu-btn" aria-haspopup="true" aria-expanded="false" aria-label="Menu">☰</button>
       <div id="menu" class="menu" hidden>
@@ -63,9 +64,15 @@
   <nav id="tabs">
     <button class="tab active" data-tab="live">Ao vivo</button>
     <button class="tab" data-tab="gallery">Galeria <span id="badge-proc" class="badge" hidden>…</span></button>
+    <button class="tab" data-tab="ai">Análise <span id="badge-ai" class="badge ai" hidden></span></button>
     <button class="tab" data-tab="settings">Ajustes</button>
     <button class="tab" data-tab="device">Dispositivo</button>
   </nav>
+
+  <div id="power-banner" class="power-banner" hidden>
+    <span class="power-banner-ico">⚡</span>
+    <span id="power-banner-text"></span>
+  </div>
 
   <main>
     <!-- ── Ao vivo ─────────────────────────────────────────────────────── -->
@@ -81,6 +88,7 @@
             <span id="ov-rec" class="ov-rec" hidden>● REC <span id="ov-rec-time">00:00</span></span>
           </div>
           <div class="live-overlay tr mono" id="ov-info"></div>
+          <canvas id="ai-canvas" class="ai-canvas"></canvas>
           <div id="flash" class="flash"></div>
           <button id="fs-exit" class="fs-exit ghost" hidden aria-label="Sair do ecrã inteiro">✕</button>
         </div>
@@ -102,6 +110,12 @@
             </label>
             <label class="switch-row"><span>Som na gravação</span>
               <input type="checkbox" id="quick-mic" class="switch"></label>
+          </div>
+
+          <div class="side-block ai-block">
+            <div class="ai-block-head"><span>Análise</span><span id="ai-fps" class="muted mono"></span></div>
+            <div id="ai-chips" class="chips"></div>
+            <div id="ai-summary" class="ai-summary muted"></div>
           </div>
 
           <div class="side-row">
@@ -132,6 +146,52 @@
       </div>
       <div id="gallery" class="gallery"></div>
       <p id="gal-empty" class="muted center gal-empty" hidden>Ainda não há fotos nem vídeos.</p>
+    </section>
+
+    <!-- ── Análise (IA) ────────────────────────────────────────────────── -->
+    <section id="tab-ai" class="panel-tab">
+      <div id="ai-missing" class="banner warn" hidden></div>
+      <div id="ai-error" class="banner err" hidden></div>
+      <div class="ai-grid">
+        <div class="panel ai-preview-panel">
+          <h2>Ao vivo <span id="ai-state" class="pill off">desligada</span></h2>
+          <div class="ai-preview-wrap">
+            <img id="ai-preview" alt="">
+            <canvas id="ai-canvas2" class="ai-canvas"></canvas>
+          </div>
+          <div id="ai-summary2" class="ai-summary muted"></div>
+        </div>
+
+        <div class="panel ai-feat-panel">
+          <h2>Funções</h2>
+          <div id="ai-features" class="ctl-list"></div>
+        </div>
+
+        <div class="panel ai-people-panel">
+          <h2>Pessoas conhecidas <span id="people-count" class="muted"></span></h2>
+          <form id="enroll-form" class="enroll">
+            <input id="enroll-name" placeholder="Nome" maxlength="40" autocomplete="off">
+            <button type="submit" id="enroll-btn">Registar a cara atual</button>
+          </form>
+          <p class="muted" style="margin:6px 0 12px">Fique sozinho em frente à câmara, a uns 50 cm. Registe 3 a 5
+            vezes, de ângulos e luzes diferentes, para o reconhecimento ser fiável. Tudo fica só neste uConsole.</p>
+          <div id="people" class="people"></div>
+        </div>
+
+        <div class="panel ai-opts-panel">
+          <h2>Opções</h2>
+          <div id="ai-options" class="ctl-list"></div>
+          <div id="ai-budget" class="ai-budget"></div>
+          <dl id="ai-perf" class="kv" style="margin-top:14px"></dl>
+        </div>
+
+        <div class="panel ai-events-panel">
+          <h2>Eventos <button id="events-clear" class="ghost small">Limpar</button></h2>
+          <div id="events" class="events"></div>
+          <p id="events-empty" class="muted center" hidden>Sem eventos. Ligue uma função e os eventos aparecem aqui
+            (entradas e saídas, pessoas reconhecidas, gestos, códigos lidos).</p>
+        </div>
+      </div>
     </section>
 
     <!-- ── Ajustes ─────────────────────────────────────────────────────── -->
@@ -188,6 +248,13 @@
           <div id="grp-mic" class="ctl-list"></div>
         </div>
         <div class="panel">
+          <h2>Energia do uConsole <span id="power-state" class="pill off">—</span></h2>
+          <dl id="dev-power" class="kv"></dl>
+          <p class="muted" style="margin-top:8px">Na bateria, a análise de imagem passa a modo poupança; com bateria
+            fraca, problema de alimentação ou CPU quente, pára sozinha. Com bateria quase vazia, uma gravação em
+            curso é terminada para o vídeo ficar guardado.</p>
+        </div>
+        <div class="panel">
           <h2>Armazenamento</h2>
           <dl id="dev-disk" class="kv"></dl>
         </div>
@@ -213,5 +280,6 @@
 </div>
 
 <script src="/js/app.js"></script>
+<script src="/js/ai.js"></script>
 </body>
 </html>
