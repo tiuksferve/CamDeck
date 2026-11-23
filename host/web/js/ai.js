@@ -280,7 +280,8 @@ function renderAIBudget() {
   box.classList.toggle('paused', !!why);
   if (why) {
     box.replaceChildren(el('b', {}, 'Em pausa: '), `${why}. `,
-      'Volta sozinha quando a energia e a temperatura normalizarem.');
+      b.blocked_battery ? 'Ligue o uConsole à corrente: a análise volta sozinha.'
+        : 'Volta sozinha quando a energia e a temperatura normalizarem.');
     return;
   }
   const fps = b.max_fps ? `até ${+b.max_fps.toFixed(1)} análises/s` : 'sem limite de análises/s';
@@ -288,7 +289,8 @@ function renderAIBudget() {
     + (b.mode.includes('quente') ? ', CPU quente' : '');
   box.replaceChildren(el('b', {}, `${label}: `),
     `${fps}, no máximo ${Math.round(b.duty * 100)} % do tempo de ${b.threads} núcleo${b.threads > 1 ? 's' : ''}. `,
-    'Sem movimento na imagem, os modelos descansam.');
+    'Sem movimento na imagem, os modelos descansam.',
+    b.mode.startsWith('bateria') ? ` Sem corrente, pára com ${b.battery_min} % ou menos.` : '');
 }
 
 const MS_LABELS = { objects: 'Objetos', pose: 'Pose', faces: 'Caras (+ humor, idade, nomes)', codes: 'Códigos' };

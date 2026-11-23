@@ -37,7 +37,7 @@ Protocolo e decisões técnicas: `docs/arquitetura.md`.
 - Só CPU. O YOLO11n é exportado na instalação (não há ONNX oficial).
 - **Nunca sobrecarregar o uConsole:** a 21/11, nas baterias e com o CPU no máximo vários minutos, o AXP228 deixou
   de responder (ecrã apagado, USB parada; só voltou desligando tudo). Agora há regulador (`budget()` em
-  `analyzer.py`), poupança no worker e `host/power.py` (avisos de bateria, pausa automática). Nada de
+  `analyzer.py`; sem corrente só corre com a bateria > 70 %), poupança no worker e `host/power.py` (avisos de bateria, pausa automática). Nada de
   benchmarks longos em todos os núcleos nem instalações pesadas (PyTorch) sem avisar o utilizador.
 - Falta testar com uma pessoa à frente da câmara: registo de caras e reconhecimento ao vivo.
 

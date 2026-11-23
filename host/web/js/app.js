@@ -560,8 +560,8 @@ $('#viewer-del').addEventListener('click', deleteCurrent);
 
 // ── Energia do uConsole ──────────────────────────────────────────────────
 const POWER_MSG = {
-  low: p => `Bateria fraca (${p.battery_pct} %). Ligue o uConsole à corrente. A análise de imagem está em pausa até lá.`,
-  critical: p => `Bateria quase vazia (${p.battery_pct} %)! Ligue o uConsole à corrente já. A análise parou e as gravações são terminadas.`,
+  low: p => `Sem corrente: o uConsole está nas baterias (${p.battery_pct} %). Verifique o carregador ou o powerbank. A análise de imagem está em pausa até lá.`,
+  critical: p => `Bateria quase vazia (${p.battery_pct} %, ${p.battery_v} V) e sem corrente! Ligue o carregador já. A análise parou e as gravações são terminadas.`,
   fault: p => `Problema de energia: ${p.reason}. Ligue o uConsole à corrente; a análise de imagem está em pausa.`,
 };
 

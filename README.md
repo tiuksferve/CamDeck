@@ -66,15 +66,19 @@ o chip de energia (AXP228) deixou de responder: ecrã apagado, USB parada. Por i
 - guarda o humor, a idade e o nome de cada cara seguida, e só os recalcula de vez em quando;
 - é regulada pela energia: **na corrente** até metade do tempo de 2 núcleos; **na bateria** até 2
   análises/s com um quarto do tempo de 1 núcleo; com o CPU acima de 72 °C, metade disso;
-- **pára sozinha** com bateria fraca (≤ 25 % ou ≤ 3,60 V), problema de alimentação (o chip de energia sem
+- **sem corrente, só corre com a bateria acima de 70 %**: ao chegar aos 70 % pára e avisa no ecrã do uConsole
+  e na página; volta sozinha na corrente ou quando a carga subir a 75 % (o mínimo muda-se com
+  `"ai_battery_min"` em `~/.config/camdeck/config.json`);
+- **pára sozinha** com problema de alimentação (o chip de energia sem
   resposta ou subtensão) ou CPU acima de 80 °C, e volta quando tudo normalizar.
 
 Resultado com objetos, pose, caras, humor e idade ligados: uma análise completa demora ~100 ms (antes ~420 ms)
 e, numa cena parada, o worker usa ~15 % de um núcleo (antes ~150 %).
 
 **Aviso de energia.** O cabeçalho mostra a bateria. Com bateria fraca, aparece uma faixa a pedir para ligar o
-uConsole à corrente, e também uma notificação no ambiente de trabalho do uConsole. Com a bateria quase vazia
-(≤ 12 % ou ≤ 3,45 V), uma gravação em curso é terminada para o MP4 ficar guardado. O painel "Energia do
+uConsole à corrente, e também uma notificação no ambiente de trabalho do uConsole (no máximo uma a cada
+15 min por nível; os níveis têm histerese de 3 %). A tensão sob carga cai muito, por isso só serve de travão final. Com a bateria quase vazia
+(≤ 10 % ou tensão média de 30 s ≤ 3,30 V), uma gravação em curso é terminada para o MP4 ficar guardado. O painel "Energia do
 uConsole" (aba Dispositivo) mostra a fonte, a carga, a tensão, a corrente, a temperatura e o estado do chip.
 
 **Licenças.** Escolhi o YOLO11n porque é bem mais preciso do que as alternativas Apache com a mesma

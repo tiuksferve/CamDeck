@@ -11,8 +11,8 @@ OpenCV), para o Flask continuar fluido e a análise poder usar os outros núcleo
 - envia os resultados aos browsers (SSE "ai") e regista eventos: entradas e saídas de
   pessoas/animais/veículos, pessoas reconhecidas, gestos e códigos lidos;
 - regula a carga pela energia e pela temperatura (ver budget()): na corrente usa até metade
-  do tempo de 2 núcleos, na bateria um quarto do tempo de 1 núcleo, e pára com bateria fraca,
-  problema de alimentação ou CPU quente.
+  do tempo de 2 núcleos, na bateria um quarto do tempo de 1 núcleo; sem corrente só corre com a
+  bateria acima de 70 % (volta na corrente ou a 75 %), e pára com problema de alimentação ou CPU quente.
 """
 
 import io
@@ -64,6 +64,10 @@ MAX_EVENTS = 300
 # Regulador de carga: (threads do onnxruntime, máx. análises/s, fração máxima do tempo a analisar)
 BUDGET_MAINS = (2, None, 0.5)
 BUDGET_BATTERY = (1, 2.0, 0.25)
+# Sem corrente, a análise só corre com a bateria acima disto (%); depois de parar, só volta na
+# corrente ou com a carga em AI_BATTERY_RESUME. Mudável com "ai_battery_min" em config.json.
+AI_BATTERY_MIN = 70
+AI_BATTERY_RESUME = 75
 
 
 class EventLog:
@@ -208,6 +212,7 @@ class AnalyzerService:
         self._fps_t = time.time()
         self._threads = None            # threads com que o worker atual arrancou
         self._paused_reason = None
+        self._bat_blocked = False       # sem corrente e bateria abaixo do mínimo para a análise
         self._holding = False
         if power:
             power.add_listener(self._on_power)
@@ -261,15 +266,27 @@ class AnalyzerService:
             mode += ", CPU quente"
             fps = min(fps or 2.0, 2.0) / 2
             duty /= 2
+        # Sem corrente: só com bateria acima do mínimo (com histerese, para não ligar e desligar)
+        lo = int(self.cfg.get("ai_battery_min") or AI_BATTERY_MIN)
+        pct = p.get("battery_pct")
+        if p.get("on_battery"):
+            need = max(lo + 5, AI_BATTERY_RESUME) if self._bat_blocked else lo + 1
+            self._bat_blocked = pct is None or pct < need
+        else:
+            self._bat_blocked = False
         paused = None
         if p.get("level") in ("low", "critical", "fault"):
             paused = p.get("reason")
+        elif self._bat_blocked:
+            paused = (f"sem corrente, bateria a {pct} % (sem corrente a análise só corre acima de {lo} %)"
+                      if pct is not None else "sem corrente e sem leitura da bateria")
         elif p.get("hot"):
             paused = f"CPU quente ({p.get('temp')} °C)"
-        return {"mode": mode, "threads": threads, "max_fps": fps, "duty": duty, "paused": paused}
+        return {"mode": mode, "threads": threads, "max_fps": fps, "duty": duty, "paused": paused,
+                "battery_min": lo, "blocked_battery": self._bat_blocked}
 
     def _on_power(self, st, prev):
-        keys = ("level", "on_battery", "warm", "hot")
+        keys = ("level", "on_battery", "warm", "hot", "battery_pct")
         if any(st.get(k) != prev.get(k) for k in keys):
             self._emit_state()
 
@@ -433,7 +450,13 @@ class AnalyzerService:
                 if b["paused"]:
                     if self._paused_reason != b["paused"]:
                         log.warning("análise em pausa: %s", b["paused"])
+                        first = self._paused_reason is None
                         self._paused_reason = b["paused"]
+                        if first and b["blocked_battery"] and self.power:
+                            self.power.notify("CamDeck: análise de imagem em pausa",
+                                              f"O uConsole está sem corrente (bateria a {self.power.state.get('battery_pct')} %). "
+                                              f"A análise só corre na corrente ou com mais de {b['battery_min']} %. "
+                                              "Ligue o carregador; ela volta sozinha.")
                         with self._lock:
                             self._kill_worker()
                         self._hold(False)
